@@ -1,0 +1,831 @@
+<!doctype html>
+<html lang="es">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>body{margin:0}[hidden]{display:none!important}</style>
+<meta charset="utf-8">
+<title>Mapa 3D de Racks Ampliado</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: panel de control a la izquierda (abajo en móvil) + vista 3D que ocupa el resto */
+:root {
+  --bg: #e7eaee;
+  --panel: #f6f7f9;
+  --fg: #18212c;
+  --muted: #586473;
+  --line: #d0d6dd;
+  --accent: #e2611a;      /* naranja de larguero */
+  --steel: #2c5b8a;       /* azul de bastidor */
+  --scene: #dfe3e8;
+  --floor: #c9ced4;
+  --st-ocupado: #b4895a;
+  --st-reservado: #7d5bd0;
+  --st-bloqueado: #d03c3c;
+  --st-vacio: #9aa5b1;
+  --wall: #eef0f2; --column: #8a96a3; --door: #5d6b7a;
+  --font-display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11161c; --panel: #182029; --fg: #e5e9ee; --muted: #93a0ae; --line: #2a3541;
+    --accent: #f07a36; --steel: #5a8cc2; --scene: #141b22; --floor: #222b35;
+    --st-ocupado: #c49a68; --st-reservado: #9b7ef0; --st-bloqueado: #ec5a5a; --st-vacio: #6b7785;
+    --wall: #2a323c; --column: #4d5966; --door: #3c4652;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11161c; --panel: #182029; --fg: #e5e9ee; --muted: #93a0ae; --line: #2a3541;
+  --accent: #f07a36; --steel: #5a8cc2; --scene: #141b22; --floor: #222b35;
+  --st-ocupado: #c49a68; --st-reservado: #9b7ef0; --st-bloqueado: #ec5a5a; --st-vacio: #6b7785;
+    --wall: #2a323c; --column: #4d5966; --door: #3c4652;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 14px; overflow: hidden; }
+* { box-sizing: border-box; }
+
+.app { display: grid; grid-template-columns: 340px 1fr; height: 100%; }
+.panel {
+  background: var(--panel); border-right: 1px solid var(--line); overflow-y: auto;
+  padding-block: 20px 24px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: 16px;
+  display: flex; flex-direction: column; gap: 20px; min-width: 0;
+}
+.viewport { position: relative; min-width: 0; min-height: 0; }
+.viewport canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+
+h1 { font-family: var(--font-display); font-weight: 700; font-size: 30px; letter-spacing: .01em; line-height: 1; margin: 0; text-wrap: balance; }
+.sub { color: var(--muted); margin: 6px 0 0; line-height: 1.45; }
+.tag { display: inline-block; font-family: var(--font-mono); font-size: 11px; color: var(--accent); border: 1px solid currentColor; border-radius: 3px; padding: 1px 6px; margin-top: 8px; }
+h2 { font-family: var(--font-display); font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); margin: 0 0 8px; }
+
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.stat { background: var(--panel); padding: 10px; }
+.stat b { display: block; font-family: var(--font-display); font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.stat span { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.bar { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; display: flex; margin-top: 10px; }
+.bar i { display: block; height: 100%; }
+
+.legend { display: flex; flex-direction: column; gap: 4px; }
+.legend button {
+  display: grid; grid-template-columns: 14px 1fr auto; align-items: center; gap: 10px;
+  background: none; border: 1px solid transparent; border-radius: 5px; padding: 6px 8px;
+  color: var(--fg); font: inherit; cursor: pointer; text-align: left;
+}
+.legend button:hover { border-color: var(--line); }
+.legend button[aria-pressed="false"] { opacity: .4; }
+.legend button[aria-pressed="false"] .sw { background: transparent !important; }
+.legend .sw { width: 14px; height: 14px; border-radius: 3px; border: 2px solid var(--c); background: var(--c); }
+.legend .n { font-family: var(--font-mono); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+input[type="search"], input[type="number"], input[type="text"] {
+  width: 100%; font: inherit; color: var(--fg); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 5px; padding: 8px 10px;
+}
+input[type="search"] { font-family: var(--font-mono); }
+input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.hint { font-size: 12px; color: var(--muted); margin: 6px 0 0; }
+.results { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.results button { width: 100%; display: flex; justify-content: space-between; gap: 8px; background: none; border: 0; border-radius: 4px; padding: 6px 8px; color: var(--fg); font: inherit; font-size: 13px; cursor: pointer; text-align: left; }
+.results button:hover { background: var(--bg); }
+.results code { font-family: var(--font-mono); font-size: 12px; color: var(--accent); white-space: nowrap; }
+.results span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+
+.detail { border: 1px solid var(--line); border-radius: 6px; padding: 14px; background: var(--bg); }
+.detail .code { font-family: var(--font-mono); font-size: 20px; font-weight: 500; letter-spacing: .02em; }
+.detail .pill { display: inline-block; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; padding: 2px 8px; border-radius: 99px; color: #fff; background: var(--c); margin-top: 6px; }
+.detail dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 12px 0 0; font-size: 13px; }
+.detail dt { color: var(--muted); }
+.detail dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.detail .mono { font-family: var(--font-mono); font-size: 12px; }
+.empty { color: var(--muted); font-size: 13px; line-height: 1.45; margin: 0; }
+
+.cfg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.cfg.cfg3 { grid-template-columns: 1fr 1fr; margin-top: 8px; }
+.cfg.cfg2 { grid-template-columns: 2fr 1fr; margin-top: 8px; }
+.cfg label { font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
+.btn { font: inherit; font-weight: 600; border-radius: 5px; padding: 8px 12px; cursor: pointer; border: 1px solid var(--line); background: var(--panel); color: var(--fg); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+
+.toolbar { position: absolute; top: 12px; right: max(12px, env(safe-area-inset-right, 0px)); display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.toolbar .btn { background: var(--panel); box-shadow: 0 1px 3px rgba(0,0,0,.12); font-size: 13px; padding: 7px 10px; }
+.toolbar .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+.help { position: absolute; left: 12px; bottom: 12px; font-size: 12px; color: var(--muted); background: var(--panel); border: 1px solid var(--line); border-radius: 5px; padding: 6px 10px; pointer-events: none; }
+.tip { position: absolute; pointer-events: none; background: var(--fg); color: var(--bg); font-size: 12px; padding: 6px 8px; border-radius: 4px; white-space: nowrap; transform: translate(12px, 12px); }
+.tip code { font-family: var(--font-mono); font-weight: 500; }
+.err { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px; color: var(--muted); }
+
+@media (max-width: 760px) {
+  .app { grid-template-columns: 1fr; grid-template-rows: 1fr minmax(0, 46%); }
+  .viewport { grid-row: 1; }
+  .panel { grid-row: 2; border-right: 0; border-top: 1px solid var(--line); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 16px 20px; }
+  .help { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="app">
+  <aside class="panel" aria-label="Panel de control">
+    <header>
+      <h1>Mapa 3D de Racks Ampliado</h1>
+      <p class="sub">Almacén de rack selectivo. Gira, acerca y toca cualquier posición para ver su código de ubicación.</p>
+      <span class="tag">RACKS VACÍOS</span>
+    </header>
+
+    <section>
+      <h2>Ocupación</h2>
+      <div class="stats">
+        <div class="stat"><b id="sTotal">0</b><span>Espacios</span></div>
+        <div class="stat"><b id="sOcc">0%</b><span>Ocupado</span></div>
+        <div class="stat"><b id="sFree">0</b><span>Tarimas libres</span></div>
+      </div>
+      <div class="bar" id="bar" aria-hidden="true"></div>
+    </section>
+
+    <section>
+      <h2>Estados</h2>
+      <div class="legend" id="legend"></div>
+      <p class="hint">Toca un estado para mostrarlo u ocultarlo en el mapa.</p>
+    </section>
+
+    <section>
+      <h2><label for="q">Buscar</label></h2>
+      <input type="search" id="q" placeholder="E10001, I12001 o B-04-3-1" autocomplete="off">
+      <p class="hint">Etiqueta (E10001) o código Rack-Espacio-Nivel-Tarima.</p>
+      <ul class="results" id="results"></ul>
+    </section>
+
+    <section>
+      <h2>Ubicación seleccionada</h2>
+      <div id="detail"><p class="empty">Toca una posición del rack en el mapa.</p></div>
+    </section>
+
+    <section>
+      <h2>Configurar almacén</h2>
+      <form id="cfgForm">
+        <div class="cfg">
+          <label for="cFirst">Primer bloque<input type="number" id="cFirst" min="0" max="8" value="2"></label>
+          <label for="cBlocks">Otros bloques<input type="number" id="cBlocks" min="0" max="20" value="9"></label>
+          <label for="cPer">Racks c/u<input type="number" id="cPer" min="1" max="8" value="4"></label>
+        </div>
+        <div class="cfg cfg3">
+          <label for="cMods">Espacios<input type="number" id="cMods" min="2" max="60" value="40"></label>
+          <label for="cLvls">Niveles<input type="number" id="cLvls" min="1" max="8" value="5"></label>
+        </div>
+        <div class="cfg cfg3">
+          <label for="cExtBlocks">Bloques nuevos<input type="number" id="cExtBlocks" min="0" max="20" value="5"></label>
+          <label for="cExtMods">Espacios nuevos<input type="number" id="cExtMods" min="2" max="60" value="43"></label>
+        </div>
+        <div class="cfg cfg2">
+          <label for="cBridges">Puentes (lugares)<input type="text" id="cBridges" value="27-31, 54-58" autocomplete="off"></label>
+          <label for="cBLvls">Niveles libres<input type="number" id="cBLvls" min="0" max="7" value="3"></label>
+        </div>
+        <div class="cfg cfg3">
+          <label for="cAltFrom">1er bloque: desde lugar<input type="number" id="cAltFrom" min="1" max="120" value="24"></label>
+          <label for="cAltLvls">Niveles ahí<input type="number" id="cAltLvls" min="0" max="10" value="6"></label>
+        </div>
+        <div class="row"><button class="btn primary" type="submit">Regenerar</button></div>
+      </form>
+      <p class="hint" id="rackInfo"></p>
+      <p class="hint">Cada espacio mide 2.7 m de frente y lleva 2 tarimas por nivel. Un nivel cada 1.6 m.</p>
+    </section>
+  </aside>
+
+  <main class="viewport" id="vp">
+    <div class="toolbar">
+      <button class="btn" id="vPersp" type="button" aria-pressed="true">Vista 3D</button>
+      <button class="btn" id="vTop" type="button" aria-pressed="false">Planta</button>
+      <button class="btn" id="vFront" type="button" aria-pressed="false">Frente</button>
+      <button class="btn" id="vLabels" type="button" aria-pressed="true">Etiquetas</button>
+    </div>
+    <div class="help">Arrastra para girar · Rueda o pellizco para zoom · Clic derecho / dos dedos para mover</div>
+    <div class="tip" id="tip" hidden></div>
+  </main>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+(function () {
+  const vp = document.getElementById('vp');
+  if (!window.THREE || !THREE.OrbitControls) {
+    vp.insertAdjacentHTML('beforeend', '<div class="err">No se pudo cargar el motor 3D. Revisa tu conexión y recarga la página.</div>');
+    return;
+  }
+
+  // ---------- Medidas (metros) ----------
+  const MOD_W = 2.7, DEPTH = 1.1, LVL_H = 1.6, BACK_GAP = 0.3, AISLE = 3.4;
+  const PAL_W = 1.0, PAL_D = 1.0;
+  // Etiqueta de ubicación: RR (rack según pasillo) + N (nivel − 1) + LL (lugar 01–80), p. ej. 10001
+  const TAG_FIRST = 10;
+  const STATES = {
+    ocupado:   { label: 'Ocupado',   token: '--st-ocupado' },
+    reservado: { label: 'Reservado', token: '--st-reservado' },
+    bloqueado: { label: 'Bloqueado', token: '--st-bloqueado' },
+    vacio:     { label: 'Vacío',     token: '--st-vacio' }
+  };
+  const visibleStates = { ocupado: true, reservado: true, bloqueado: true, vacio: true };
+
+  const PRODUCTS = [
+    ['Motor paso a paso NEMA 17', 'pza'], ['Servomotor 24 V 400 W', 'pza'], ['Rodamiento 6204-2RS', 'caja'],
+    ['Tornillo M6 × 20 (caja 500)', 'caja'], ['Perfil aluminio 40×40 · 3 m', 'pza'], ['Banda dentada GT2 · 50 m', 'rollo'],
+    ['Sensor inductivo M12', 'pza'], ['Batería LiFePO4 48 V', 'pza'], ['Cable 4×1.5 mm² · 100 m', 'rollo'],
+    ['Rueda omnidireccional 152 mm', 'pza'], ['Placa controladora v3', 'caja'], ['Fuente 24 V 10 A', 'pza'],
+    ['Reductor planetario 10:1', 'pza'], ['Garra neumática 2 dedos', 'pza'], ['Cartón corrugado 60×40', 'paq'],
+    ['Lidar 2D 12 m', 'pza'], ['Tuerca M8 nylon (caja 1000)', 'caja'], ['Carcasa ABS frontal', 'caja']
+  ];
+  const BLOCK_REASONS = ['Inventario cíclico', 'Larguero dañado', 'Calidad en revisión', 'Mantenimiento'];
+
+  function rng(seed) { return function () { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+  const pad = n => String(n).padStart(2, '0');
+  // A…Z, luego AA, AB…
+  const rowLetter = r => r < 26 ? String.fromCharCode(65 + r) : String.fromCharCode(64 + Math.floor(r / 26)) + String.fromCharCode(65 + r % 26);
+  const cssVar = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+  // ---------- Configuración guardada ----------
+  // Bloques de racks juntos (espalda con espalda); entre bloques hay pasillo
+  let cfg = { first: 2, blocks: 9, perBlock: 4, mods: 40, lvls: 5, bridges: [[27, 31], [54, 58]], bridgeLvls: 3, alt: { from: 24, lvls: 6 }, ext: { blocks: 5, mods: 43 } };
+  try { const s = JSON.parse(localStorage.getItem('racks3d-grande.cfg.v2')); if (s && s.ext && s.alt && s.perBlock && Array.isArray(s.bridges)) cfg = s; } catch (e) {}
+  // Bloques en orden desde los andenes: rack doble, bloques originales y bloques nuevos (más largos) al fondo
+  const blockList = () => [{ n: cfg.first, mods: cfg.mods }, ...Array(cfg.blocks).fill({ n: cfg.perBlock, mods: cfg.mods }),
+    ...Array(cfg.ext.blocks).fill({ n: cfg.perBlock, mods: cfg.ext.mods })].filter(b => b.n > 0);
+  const blockSizes = () => blockList().map(b => b.n);
+  cfg.rows = blockSizes().reduce((a, b) => a + b, 0);
+  const cFirst = document.getElementById('cFirst'), cBlocks = document.getElementById('cBlocks'), cPer = document.getElementById('cPer');
+  const cMods = document.getElementById('cMods'), cLvls = document.getElementById('cLvls');
+  const cExtBlocks = document.getElementById('cExtBlocks'), cExtMods = document.getElementById('cExtMods');
+  const cBridges = document.getElementById('cBridges'), cBLvls = document.getElementById('cBLvls');
+  const cAltFrom = document.getElementById('cAltFrom'), cAltLvls = document.getElementById('cAltLvls');
+  const fmtBridges = b => b.map(([a, z]) => `${a}-${z}`).join(', ');
+  const parseBridges = t => t.split(/[,;]+/).map(s => s.match(/(\d+)\s*(?:-|a)\s*(\d+)/)).filter(Boolean)
+    .map(m => [Math.min(+m[1], +m[2]), Math.max(+m[1], +m[2])]);
+  cFirst.value = cfg.first; cBlocks.value = cfg.blocks; cPer.value = cfg.perBlock; cMods.value = cfg.mods; cLvls.value = cfg.lvls; cExtBlocks.value = cfg.ext.blocks; cExtMods.value = cfg.ext.mods;
+  cBridges.value = fmtBridges(cfg.bridges); cBLvls.value = cfg.bridgeLvls; cAltFrom.value = cfg.alt.from; cAltLvls.value = cfg.alt.lvls;
+
+  // ---------- Escena ----------
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  vp.prepend(renderer.domElement);
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 900);
+  const controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.maxPolarAngle = Math.PI / 2 - 0.03;
+  controls.minDistance = 3;
+  controls.maxDistance = 320;
+
+  const hemi = new THREE.HemisphereLight(0xffffff, 0x8890a0, 0.75);
+  scene.add(hemi);
+  const sun = new THREE.DirectionalLight(0xffffff, 0.7);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(4096, 4096);
+  sun.shadow.bias = -0.0005;
+  scene.add(sun, sun.target);
+
+  const mats = {};
+  function makeMats() {
+    const c = n => new THREE.Color(cssVar(n));
+    mats.upright = new THREE.MeshStandardMaterial({ color: c('--steel'), roughness: 0.55, metalness: 0.3 });
+    mats.beam = new THREE.MeshStandardMaterial({ color: c('--accent'), roughness: 0.5, metalness: 0.25 });
+    mats.pallet = new THREE.MeshStandardMaterial({ color: 0xa57b4f, roughness: 0.9 });
+    mats.floor = new THREE.MeshStandardMaterial({ color: c('--floor'), roughness: 1 });
+    mats.lane = new THREE.MeshBasicMaterial({ color: 0xf2c230 });
+    mats.wall = new THREE.MeshStandardMaterial({ color: c('--wall'), roughness: 0.95 });
+    mats.column = new THREE.MeshStandardMaterial({ color: c('--column'), roughness: 0.6, metalness: 0.2 });
+    mats.door = new THREE.MeshStandardMaterial({ color: c('--door'), roughness: 0.7, metalness: 0.3 });
+    mats.zone = new THREE.MeshBasicMaterial({ color: 0xf2c230, transparent: true, opacity: 0.14, depthWrite: false });
+    mats.zoneLine = new THREE.LineBasicMaterial({ color: 0xf2c230 });
+    mats.tagPlate = new THREE.MeshBasicMaterial({ color: 0xf6f6f2 });
+    Object.keys(STATES).forEach(k => {
+      mats[k] = k === 'vacio'
+        ? new THREE.MeshBasicMaterial({ color: c(STATES[k].token), transparent: true, opacity: 0.12, depthWrite: false })
+        : new THREE.MeshStandardMaterial({ color: c(STATES[k].token), roughness: 0.85 });
+    });
+    mats.selEdge = new THREE.LineBasicMaterial({ color: c('--accent') });
+    mats.hit = new THREE.MeshBasicMaterial({ color: c('--accent'), transparent: true, opacity: 0.35, depthWrite: false });
+  }
+
+  let world = null, slots = [], stateMeshes = {}, labels = [], bounds = null, selected = null;
+  const boxGeo = new THREE.BoxGeometry(1, 1, 1), planeGeo = new THREE.PlaneGeometry(1, 1);
+  let tagGroup = null;
+  // Un material por dígito (0–9), dibujado en negro sobre fondo transparente
+  function digitMat(d) {
+    const c = document.createElement('canvas'); c.width = 64; c.height = 80;
+    const g = c.getContext('2d');
+    g.fillStyle = '#111'; g.font = '700 76px "IBM Plex Mono", Consolas, monospace';
+    g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(String(d), 32, 44);
+    const tex = new THREE.CanvasTexture(c); tex.anisotropy = 4;
+    return new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.3 });
+  }
+
+  function build() {
+    if (world) { scene.remove(world); world.traverse(o => { if (o.geometry && o.geometry !== boxGeo && o.geometry !== planeGeo) o.geometry.dispose(); if (o.material && o.material.map) o.material.map.dispose(); }); }
+    world = new THREE.Group();
+    scene.add(world);
+    slots = []; stateMeshes = {}; labels = []; selected = null;
+    tagGroup = new THREE.Group();
+    const R = rng(cfg.rows * 1000 + cfg.mods * 37 + cfg.lvls);
+
+    // Posición de cada rack: dentro de un bloque van pegados (0.3 m de separación); entre bloques, pasillo
+    const zs = [], sides = [], blockEnds = [], rowMods = [], rowOff = [], faceSide = [], faceNum = [], tagRef = [], tagPre = [], tagPair = [];
+    let zc = 0;
+    blockList().forEach(({ n, mods }, bi) => {
+      if (bi) zc += AISLE;
+      const r0 = zs.length;
+      for (let i = 0; i < n; i++) {
+        // Los racks más largos crecen hacia antes del lugar 01 (rowOff en espacios, negativo)
+        zs.push(zc); rowMods.push(mods); rowOff.push(Math.min(0, cfg.mods - mods)); sides.push(i < n / 2 ? -1 : 1); zc += DEPTH + (i < n - 1 ? BACK_GAP : 0);
+        // Solo las caras que dan al pasillo tienen número; los racks de en medio usan la cara de su lado
+        faceSide.push(i === 0 ? -1 : i === n - 1 ? 1 : 0);
+        tagRef.push(i < n / 2 ? r0 : r0 + n - 1);
+        // E = rack exterior (da al pasillo), I = rack interior
+        tagPre.push(i === 0 || i === n - 1 ? 'E' : 'I');
+        tagPair.push(n > 2); // solo donde hay rack interior van dos etiquetas lado a lado
+      }
+      blockEnds.push(zc);
+    });
+    // Número de rack según el pasillo: 10, 11, 12… en orden desde los andenes
+    let nextFace = TAG_FIRST;
+    faceSide.forEach((f, r) => { faceNum[r] = f ? nextFace++ : null; });
+    const rowZ = r => zs[r];
+    const maxMods = Math.max(...rowMods);
+    const minStart = Math.min(...rowOff), maxEnd = Math.max(...rowOff.map((o, r) => o + rowMods[r]));
+    const lenX = (maxEnd - minStart) * MOD_W;
+    const lenZ = rowZ(cfg.rows - 1) + DEPTH;
+    // ox = donde empieza el lugar 01 de los racks originales
+    const ox = -(minStart + maxEnd) / 2 * MOD_W, oz = -lenZ / 2;
+    const topY = (cfg.lvls - 1) * LVL_H + 1.5;
+    // Nave: pasillos de cabecera en los extremos, zona de andenes al fondo
+    const HEAD = 4, DOCK = 11, FRONT = 3;
+    const x0 = ox + minStart * MOD_W - HEAD, x1 = ox + maxEnd * MOD_W + HEAD, z0b = oz - DOCK, z1b = oz + lenZ + FRONT;
+    const bW = x1 - x0, bD = z1b - z0b, cz = (z0b + z1b) / 2;
+    const wallH = Math.max(topY + 2.5, 8);
+    bounds = { lenX: bW, lenZ: bD, topY, cz };
+
+    // Piso
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(bW, bD), mats.floor);
+    floor.rotation.x = -Math.PI / 2; floor.position.set(0, 0, cz); floor.receiveShadow = true;
+    world.add(floor);
+
+    // Muros: completos al fondo (andenes) y a la izquierda; bordillo bajo en los lados abiertos para ver dentro
+    const wall = (x, z, w, h, d, mat) => { const m = new THREE.Mesh(boxGeo, mat); m.scale.set(w, h, d); m.position.set(x, h / 2, z); m.receiveShadow = true; world.add(m); return m; };
+    wall(0, z0b - 0.15, bW + 0.6, wallH, 0.3, mats.wall);
+    wall(x0 - 0.15, cz, 0.3, wallH, bD, mats.wall);
+    wall(x1 + 0.15, cz, 0.3, 0.35, bD + 0.6, mats.wall);
+    wall(0, z1b + 0.15, bW + 0.6, 0.35, 0.3, mats.wall);
+
+    // Puertas de andén con su zona de preparación marcada en el piso
+    const nDoors = Math.max(2, Math.floor(bW / 6));
+    const zoneD = DOCK - 4;
+    for (let i = 0; i < nDoors; i++) {
+      const x = x0 + bW * (i + 0.5) / nDoors;
+      const door = new THREE.Mesh(boxGeo, mats.door);
+      door.scale.set(3, 3.4, 0.1); door.position.set(x, 1.7 + 0.2, z0b + 0.02); world.add(door);
+      const num = makeLabel(String(i + 1), true);
+      num.position.set(x, 4.2, z0b + 0.3); num.scale.set(0.8, 0.8, 1); world.add(num); labels.push(num);
+      const zone = new THREE.Mesh(new THREE.PlaneGeometry(3.2, zoneD), mats.zone);
+      zone.rotation.x = -Math.PI / 2; zone.position.set(x, 0.006, z0b + 0.6 + zoneD / 2); world.add(zone);
+      const edge = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneGeometry(3.2, zoneD)), mats.zoneLine);
+      edge.rotation.x = -Math.PI / 2; edge.position.copy(zone.position); edge.position.y = 0.008; world.add(edge);
+    }
+    const dockTxt = floorText('ZONA DE CARGA Y DESCARGA');
+    dockTxt.position.set(0, 0.01, z0b + DOCK - 1.6); world.add(dockTxt);
+
+    // Columnas de la nave cada ~9 m en el perímetro
+    const colH = wallH;
+    const nCx = Math.max(2, Math.round(bW / 9)), nCz = Math.max(2, Math.round(bD / 9));
+    for (let i = 0; i <= nCx; i++) {
+      const x = x0 + 0.35 + (bW - 0.7) * i / nCx;
+      wall(x, z0b + 0.35, 0.4, colH, 0.4, mats.column);
+      wall(x, z1b - 0.35, 0.4, colH, 0.4, mats.column);
+    }
+    for (let j = 1; j < nCz; j++) {
+      const z = z0b + 0.35 + (bD - 0.7) * j / nCz;
+      wall(x0 + 0.35, z, 0.4, colH, 0.4, mats.column);
+      wall(x1 - 0.35, z, 0.4, colH, 0.4, mats.column);
+    }
+
+    // Líneas amarillas de los pasillos de cabecera
+    [ox + minStart * MOD_W - 0.6, ox + maxEnd * MOD_W + 0.6].forEach(x => {
+      const l = new THREE.Mesh(new THREE.PlaneGeometry(0.08, lenZ + 1), mats.lane);
+      l.rotation.x = -Math.PI / 2; l.position.set(x, 0.005, oz + lenZ / 2); world.add(l);
+    });
+    for (let p = 0; p < blockEnds.length - 1; p++) {
+      const zA = blockEnds[p]; // borde frontal del bloque
+      [0.25, AISLE - 0.25].forEach(off => {
+        const l = new THREE.Mesh(new THREE.PlaneGeometry(lenX + 1, 0.08), mats.lane);
+        l.rotation.x = -Math.PI / 2; l.position.set(0, 0.005, oz + zA + off);
+        world.add(l);
+      });
+    }
+
+    // Puentes: lugares (2 por espacio, contados a lo largo) sin los primeros niveles, para que pase el montacargas
+    const HW = MOD_W / 2;
+    const bridges = cfg.bridges.filter(([a, b]) => a >= 1 && b <= maxMods * 2 && a <= b);
+    const bLvls = Math.min(cfg.bridgeLvls, cfg.lvls);
+    const bTop = bLvls * LVL_H;
+    const inBridge = n => bridges.some(([a, b]) => n >= a && n <= b);
+    const bridgeX = bridges.map(([a, b]) => [ox + (a - 1) * HW, ox + b * HW]);
+
+    // Estructura con InstancedMesh
+    const nUp = cfg.rows * (maxMods + 2 + bridges.length * 2) * 2;
+    const nBeam = cfg.rows * maxMods * 2 * Math.max(cfg.lvls, cfg.alt.lvls) * 2;
+    const ups = new THREE.InstancedMesh(boxGeo, mats.upright, nUp);
+    const beams = new THREE.InstancedMesh(boxGeo, mats.beam, Math.max(nBeam, 1));
+    ups.castShadow = beams.castShadow = true;
+    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion();
+    let iu = 0, ib = 0;
+    const put = (mesh, i, x, y, z, sx, sy, sz) => { m4.compose(new THREE.Vector3(x, y, z), q, new THREE.Vector3(sx, sy, sz)); mesh.setMatrixAt(i, m4); };
+
+    // Primer bloque: desde cierto lugar lleva más niveles, más bajos, en la misma altura total
+    const altOn = (r, n) => r < cfg.first && cfg.alt.lvls > 0 && n >= cfg.alt.from;
+    const lvlsAt = (r, n) => altOn(r, n) ? cfg.alt.lvls : cfg.lvls;
+    const pitchOf = L => cfg.lvls * LVL_H / L;
+    // Primer nivel que queda arriba del paso libre del puente
+    const firstAbove = pitch => Math.ceil(bTop / pitch - 1e-6);
+
+    for (let r = 0; r < cfg.rows; r++) {
+      const z0 = oz + rowZ(r);
+      // Inicio de este rack y desfase de lugares respecto a los originales (los puentes quedan alineados)
+      const rx0 = ox + rowOff[r] * MOD_W, sh = rowOff[r] * 2;
+      // Postes en cada módulo, en las orillas de cada puente y donde cambia el número de niveles
+      const postX = new Map();
+      for (let m = 0; m <= rowMods[r]; m++) postX.set((rx0 + m * MOD_W).toFixed(3), rx0 + m * MOD_W);
+      bridgeX.forEach(([xa, xb]) => { postX.set(xa.toFixed(3), xa); postX.set(xb.toFixed(3), xb); });
+      if (r < cfg.first && cfg.alt.lvls > 0 && cfg.alt.from > 1) { const xt = ox + (cfg.alt.from - 1) * HW; postX.set(xt.toFixed(3), xt); }
+      postX.forEach(x => {
+        const inside = bridgeX.some(([xa, xb]) => x > xa + 1e-3 && x < xb - 1e-3);
+        const pitch = pitchOf(lvlsAt(r, Math.floor((x - rx0) / HW + 1e-6) + 1));
+        const y0 = inside ? firstAbove(pitch) * pitch - 0.12 : 0, h = topY - y0;
+        put(ups, iu++, x, y0 + h / 2, z0 + 0.04, 0.09, h, 0.08);
+        put(ups, iu++, x, y0 + h / 2, z0 + DEPTH - 0.04, 0.09, h, 0.08);
+      });
+      // Piso marcado bajo cada puente
+      bridgeX.forEach(([xa, xb]) => {
+        const zone = new THREE.Mesh(new THREE.PlaneGeometry(xb - xa, DEPTH), mats.zone);
+        zone.rotation.x = -Math.PI / 2; zone.position.set((xa + xb) / 2, 0.006, z0 + DEPTH / 2); world.add(zone);
+        const edge = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneGeometry(xb - xa, DEPTH)), mats.zoneLine);
+        edge.rotation.x = -Math.PI / 2; edge.position.set((xa + xb) / 2, 0.008, z0 + DEPTH / 2); world.add(edge);
+      });
+      for (let m = 0; m < rowMods[r]; m++) {
+        // Largueros por mitad de espacio (un lugar), para poder cortarlos en los puentes
+        for (let p = 0; p < 2; p++) {
+          const n = m * 2 + p + 1;
+          const xc = rx0 + m * MOD_W + (p ? HW : 0.05) + (HW - 0.05) / 2;
+          const L = lvlsAt(r, n), pitch = pitchOf(L), skip = inBridge(n + sh) ? firstAbove(pitch) : 0;
+          for (let l = 1; l <= L; l++) {
+            if (l < skip) continue;
+            const y = l === L ? topY - 0.06 : l * pitch - 0.06;
+            put(beams, ib++, xc, y, z0 + 0.05, HW - 0.05, 0.12, 0.05);
+            put(beams, ib++, xc, y, z0 + DEPTH - 0.05, HW - 0.05, 0.12, 0.05);
+          }
+        }
+        // Tarimas / huecos
+        for (let p = 0; p < 2; p++) {
+          const lugar = m * 2 + p + 1;
+          const L = lvlsAt(r, lugar), pitch = pitchOf(L), skip = inBridge(lugar + sh) ? firstAbove(pitch) : 0;
+          for (let l = skip; l < L; l++) {
+            const code = `${rowLetter(r)}-${pad(m + 1)}-${l + 1}-${p + 1}`;
+            const v = R();
+            const st = 'vacio'; // racks vacíos: todas las posiciones libres
+            const prod = PRODUCTS[Math.floor(R() * PRODUCTS.length)];
+            const h = st === 'vacio' ? pitch - 0.3 : 0.6 + R() * (pitch - 0.85);
+            const baseY = l * pitch;
+            const x = rx0 + m * MOD_W + MOD_W * (p * 2 + 1) / 4;
+            const z = z0 + DEPTH / 2;
+            const day = 1 + Math.floor(R() * 27), mon = 7 + Math.floor(R() * 3);
+            const slot = {
+              code, row: rowLetter(r), mods: rowMods[r], mod: m + 1, lvl: l + 1, lvls: L, baseY, pos: p + 1, lugar, state: st,
+              tag: `${tagPre[r]}${faceNum[tagRef[r]]}${l}${pad(lugar)}`, face: faceSide[tagRef[r]], rackNum: faceNum[tagRef[r]],
+              tagZ: oz + rowZ(tagRef[r]) + (faceSide[tagRef[r]] > 0 ? DEPTH + 0.012 : -0.012),
+              tagShift: !tagPair[r] ? 0 : tagPre[r] === 'E' ? -1 : 1,
+              sku: st === 'vacio' ? null : 'SKU-' + (10000 + Math.floor(R() * 89999)),
+              product: st === 'vacio' ? null : prod[0], unit: prod[1],
+              qty: st === 'vacio' ? 0 : 4 + Math.floor(R() * 96),
+              date: st === 'vacio' ? null : `2026-${pad(mon)}-${pad(day)}`,
+              reason: st === 'bloqueado' ? BLOCK_REASONS[Math.floor(R() * BLOCK_REASONS.length)] : null,
+              center: new THREE.Vector3(x, baseY + 0.12 + h / 2, z), h, side: sides[r]
+            };
+            if (st === 'reservado' && R() < 0.5) { slot.product = 'Reservado para pedido'; slot.sku = 'PED-' + (5000 + Math.floor(R() * 4000)); }
+            slots.push(slot);
+          }
+        }
+      }
+      // Etiqueta de fila en ambos extremos
+      [rx0 - 0.9, rx0 + rowMods[r] * MOD_W + 0.9].forEach(x => {
+        const s = makeLabel(rowLetter(r));
+        s.position.set(x, topY + 0.2, z0 + DEPTH / 2);
+        world.add(s); labels.push(s);
+      });
+    }
+    ups.count = iu; beams.count = ib;
+    world.add(ups, beams);
+
+    // Tarimas y huecos: un InstancedMesh por estado (miles de posiciones en pocas llamadas de dibujo)
+    Object.keys(STATES).forEach(k => {
+      const list = slots.filter(s => s.state === k);
+      if (!list.length) return;
+      const im = new THREE.InstancedMesh(boxGeo, mats[k], list.length);
+      list.forEach((s, i) => {
+        const w = k === 'vacio' ? PAL_W : PAL_W * 0.96;
+        put(im, i, s.center.x, s.center.y, s.center.z, w, s.h, w);
+      });
+      im.castShadow = k !== 'vacio'; im.receiveShadow = true;
+      im.userData.slots = list;
+      world.add(im); stateMeshes[k] = im;
+    });
+
+    // Etiquetas en el larguero de la cara del pasillo: placa blanca + un InstancedMesh por carácter.
+    // En bloques de 4, la E (exterior) va a la izquierda y la I (interior) a la derecha, vistas desde el pasillo
+    const tagged = slots.filter(s => s.tag);
+    const TAG_H = 0.13, DIG_W = 0.088, DIG_H = 0.11;
+    const qFace = { 1: new THREE.Quaternion(), '-1': new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI) };
+    const putQ = (mesh, i, x, y, z, sx, sy, qq) => { m4.compose(new THREE.Vector3(x, y, z), qq, new THREE.Vector3(sx, sy, 1)); mesh.setMatrixAt(i, m4); };
+    const tagPos = s => {
+      const y = s.lvl === 1 ? 0.14 : s.baseY - 0.06;
+      return { x: s.center.x + s.tagShift * s.face * 0.33, y, z: s.tagZ };
+    };
+    if (tagged.length) {
+      const plates = new THREE.InstancedMesh(planeGeo, mats.tagPlate, tagged.length);
+      const perChar = {};
+      tagged.forEach((s, i) => {
+        const t = tagPos(s);
+        putQ(plates, i, t.x, t.y, t.z, s.tag.length * DIG_W + 0.07, TAG_H, qFace[s.face]);
+        // Se lee de izquierda a derecha visto desde el pasillo
+        const dir = s.face;
+        [...s.tag].forEach((ch, j) => {
+          const off = (j - (s.tag.length - 1) / 2) * DIG_W;
+          (perChar[ch] = perChar[ch] || []).push([t.x + off * dir, t.y, t.z + 0.004 * s.face, s.face]);
+        });
+      });
+      tagGroup.add(plates);
+      Object.entries(perChar).forEach(([d, list]) => {
+        const im = new THREE.InstancedMesh(planeGeo, digitMat(d), list.length);
+        list.forEach(([x, y, z, f], i) => putQ(im, i, x, y, z, DIG_W, DIG_H, qFace[f]));
+        tagGroup.add(im);
+      });
+    }
+    world.add(tagGroup);
+
+    // Marcador de selección
+    selMarker = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)), mats.selEdge);
+    selMarker.visible = false; world.add(selMarker);
+    selGlow = new THREE.Mesh(boxGeo, mats.hit); selGlow.visible = false; world.add(selGlow);
+
+    // Sombra ajustada al tamaño
+    const ext = Math.max(bW, bD) * 0.7 + 6;
+    Object.assign(sun.shadow.camera, { left: -ext, right: ext, top: ext, bottom: -ext, near: 1, far: ext * 4 });
+    sun.shadow.camera.updateProjectionMatrix();
+    sun.position.set(ext * 0.6, ext * 1.4, cz + ext * 0.9); sun.target.position.set(0, 0, cz);
+
+    applyFilters(); setLabels(labelsOn); updateStats();
+    setView('persp', false);
+    renderDetail(null); doSearch();
+  }
+  let selMarker, selGlow;
+
+  // Círculo azul para filas, cuadro naranja para puertas de andén
+  function makeLabel(text, door) {
+    const c = document.createElement('canvas'); c.width = c.height = 128;
+    const g = c.getContext('2d');
+    g.fillStyle = cssVar(door ? '--accent' : '--steel');
+    g.beginPath();
+    if (door) g.rect(8, 8, 112, 112); else g.arc(64, 64, 58, 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = '#fff'; g.font = '700 76px "Barlow Condensed", Arial Narrow, sans-serif';
+    g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(text, 64, 70);
+    const tex = new THREE.CanvasTexture(c);
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false }));
+    s.scale.set(1.1, 1.1, 1); s.renderOrder = 10; s.userData.letter = text; s.userData.door = !!door;
+    return s;
+  }
+
+  // Texto pintado en el piso
+  function floorText(text) {
+    const c = document.createElement('canvas'); c.width = 1024; c.height = 96;
+    const g = c.getContext('2d');
+    g.fillStyle = '#f2c230'; g.font = '700 72px "Barlow Condensed", Arial Narrow, sans-serif';
+    g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(text, 512, 52);
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(10, 0.94), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(c), transparent: true, opacity: 0.85, depthWrite: false }));
+    m.rotation.x = -Math.PI / 2;
+    return m;
+  }
+
+  // ---------- Estadísticas y leyenda ----------
+  const legend = document.getElementById('legend');
+  function updateStats() {
+    const counts = { ocupado: 0, reservado: 0, bloqueado: 0, vacio: 0 };
+    slots.forEach(s => counts[s.state]++);
+    const total = slots.length;
+    const spaces = cfg.mods * cfg.lvls;
+    document.getElementById('sTotal').textContent = blockList().reduce((a, b) => a + b.n * b.mods, 0).toLocaleString('es');
+    const bTxt = cfg.bridges.length && cfg.bridgeLvls ? ` Puentes en lugares ${fmtBridges(cfg.bridges)} sin los primeros ${cfg.bridgeLvls} niveles.` : '';
+    const lay = `${cfg.rows} racks: ${cfg.first ? `un bloque de ${cfg.first}` : ''}${cfg.first && cfg.blocks ? ' + ' : ''}${cfg.blocks ? `${cfg.blocks} bloques de ${cfg.perBlock}` : ''}${cfg.ext.blocks ? ` + ${cfg.ext.blocks} bloques nuevos de ${cfg.perBlock}` : ''}.`;
+    const perRow = {}; slots.forEach(s => { perRow[s.row] = (perRow[s.row] || 0) + 1; });
+    const firstTxt = cfg.first && cfg.alt.lvls ? ` Primer bloque: ${cfg.lvls} niveles hasta el lugar ${cfg.alt.from - 1} y ${cfg.alt.lvls} desde el ${cfg.alt.from}, ${perRow[rowLetter(0)]} tarimas por rack.` : '';
+    const midRow = cfg.first + cfg.blocks * cfg.perBlock - 1;
+    const restTxt = (cfg.blocks ? ` Bloques originales: ${perRow[rowLetter(midRow)]} tarimas por rack.` : '') + (cfg.ext.blocks ? ` Bloques nuevos: ${cfg.ext.mods} espacios (${cfg.ext.mods * 2} lugares), con los espacios extra antes del lugar 01; puentes en sus lugares ${fmtBridges(cfg.bridges.map(([a, b]) => [a + 2 * Math.max(0, cfg.ext.mods - cfg.mods), b + 2 * Math.max(0, cfg.ext.mods - cfg.mods)]))}; ${perRow[rowLetter(cfg.rows - 1)]} tarimas por rack.` : '');
+    document.getElementById('rackInfo').textContent = `${lay} Racks originales: ${cfg.mods} espacios (${cfg.mods * 2} lugares).${firstTxt}${restTxt}${bTxt}`;
+    document.getElementById('sOcc').textContent = Math.round((total - counts.vacio) / total * 100) + '%';
+    document.getElementById('sFree').textContent = counts.vacio.toLocaleString('es');
+    document.getElementById('bar').innerHTML = Object.keys(STATES).map(k => `<i style="width:${counts[k] / total * 100}%;background:var(${STATES[k].token})"></i>`).join('');
+    legend.innerHTML = Object.keys(STATES).map(k =>
+      `<button type="button" data-st="${k}" aria-pressed="${visibleStates[k]}" style="--c:var(${STATES[k].token})"><span class="sw"></span><span>${STATES[k].label}</span><span class="n">${counts[k]}</span></button>`).join('');
+  }
+  legend.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    const k = b.dataset.st; visibleStates[k] = !visibleStates[k];
+    b.setAttribute('aria-pressed', visibleStates[k]); applyFilters();
+  });
+  function applyFilters() { Object.entries(stateMeshes).forEach(([k, m]) => { m.visible = visibleStates[k]; }); }
+
+  // ---------- Detalle ----------
+  const detail = document.getElementById('detail');
+  const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  function renderDetail(s) {
+    if (!s) { detail.innerHTML = '<p class="empty">Toca una posición del rack en el mapa.</p>'; return; }
+    const rows = [
+      ['Rack', s.row], ['Espacio', `${pad(s.mod)} de ${s.mods}`], ['Lugar', `${s.lugar} de ${s.mods * 2}`], ['Nivel', `${s.lvl} de ${s.lvls} · ${s.baseY.toFixed(2)} m`], ['Tarima', `${s.pos} de 2`]
+    ];
+    if (s.tag) rows.unshift(['Etiqueta', `<span class="mono">${s.tag}</span>`], ['Rack (pasillo)', s.rackNum]);
+    if (s.tag) rows.splice(1, 0, ['Tipo', s.tag[0] === 'E' ? 'Exterior (E)' : 'Interior (I)']);
+    if (s.sku) rows.push(['Referencia', `<span class="mono">${esc(s.sku)}</span>`]);
+    if (s.product) rows.push(['Producto', esc(s.product)]);
+    if (s.qty) rows.push(['Cantidad', `${s.qty} ${s.unit}`]);
+    if (s.date) rows.push(['Entrada', s.date]);
+    if (s.reason) rows.push(['Motivo', esc(s.reason)]);
+    detail.innerHTML = `<div class="detail"><div class="code">${s.tag || s.code}</div>${s.tag ? `<div class="hint">${s.code}</div>` : ""}
+      <span class="pill" style="--c:var(${STATES[s.state].token})">${STATES[s.state].label}</span>
+      <dl>${rows.map(r => `<dt>${r[0]}</dt><dd>${r[1]}</dd>`).join('')}</dl>
+      <div class="row"><button class="btn" type="button" id="goSel">Centrar en el mapa</button></div></div>`;
+    document.getElementById('goSel').onclick = () => flyTo(s);
+  }
+
+  function select(s, fly) {
+    selected = s;
+    if (s) {
+      if (!visibleStates[s.state]) { visibleStates[s.state] = true; applyFilters(); updateStats(); }
+      const sc = new THREE.Vector3(PAL_W + 0.08, s.h + 0.2, PAL_D + 0.08);
+      selMarker.position.copy(s.center); selMarker.scale.copy(sc); selMarker.visible = true;
+      selGlow.position.copy(s.center); selGlow.scale.copy(sc); selGlow.visible = true;
+    } else { selMarker.visible = selGlow.visible = false; }
+    renderDetail(s);
+    if (s && fly) flyTo(s);
+  }
+
+  // ---------- Cámara ----------
+  let anim = null;
+  function animateCam(pos, target, ms) {
+    const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduce || !ms) { camera.position.copy(pos); controls.target.copy(target); controls.update(); return; }
+    anim = { p0: camera.position.clone(), t0: controls.target.clone(), p1: pos, t1: target, start: performance.now(), ms };
+  }
+  function flyTo(s) {
+    const t = s.center.clone();
+    animateCam(new THREE.Vector3(t.x + 2.5, t.y + 3, t.z + s.side * 7), t, 700);
+  }
+  const viewBtns = { persp: document.getElementById('vPersp'), top: document.getElementById('vTop'), front: document.getElementById('vFront') };
+  function setView(v, smooth = true) {
+    Object.entries(viewBtns).forEach(([k, b]) => b.setAttribute('aria-pressed', k === v));
+    const { lenX, lenZ, topY, cz } = bounds; const d = Math.max(lenX, lenZ);
+    const tgt = new THREE.Vector3(0, topY * 0.3, cz);
+    let pos;
+    // Altura para que quepa toda la nave en pantalla, según el ancho de la vista
+    const fitH = Math.max(lenZ, lenX / camera.aspect) / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))) * 1.08;
+    if (v === 'top') pos = new THREE.Vector3(0, fitH + topY, cz + 0.01);
+    else if (v === 'front') pos = new THREE.Vector3(0, topY * 0.6, cz + lenZ / 2 + d * 0.9 + 4);
+    else pos = new THREE.Vector3(d * 0.75 + 4, d * 0.55 + topY, cz + d * 0.8 + 4);
+    animateCam(pos, tgt, smooth ? 700 : 0);
+  }
+  viewBtns.persp.onclick = () => setView('persp');
+  viewBtns.top.onclick = () => setView('top');
+  viewBtns.front.onclick = () => setView('front');
+  let labelsOn = true;
+  function setLabels(on) { labelsOn = on; labels.forEach(l => l.visible = on); if (tagGroup) tagGroup.visible = on; document.getElementById('vLabels').setAttribute('aria-pressed', on); }
+  document.getElementById('vLabels').onclick = () => setLabels(!labelsOn);
+
+  // ---------- Selección con el puntero ----------
+  const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), tip = document.getElementById('tip');
+  function pick(ev) {
+    const r = renderer.domElement.getBoundingClientRect();
+    ndc.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
+    ray.setFromCamera(ndc, camera);
+    const hits = ray.intersectObjects(Object.values(stateMeshes).filter(m => m.visible), false);
+    // Preferir tarimas reales sobre huecos fantasma
+    const hit = hits.find(h => h.object !== stateMeshes.vacio) || hits[0];
+    return hit ? hit.object.userData.slots[hit.instanceId] : null;
+  }
+  let down = null;
+  renderer.domElement.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY }; anim = null; });
+  renderer.domElement.addEventListener('pointerup', e => {
+    if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 5) return;
+    select(pick(e), false);
+  });
+  renderer.domElement.addEventListener('pointermove', e => {
+    if (e.pointerType !== 'mouse' || e.buttons) { tip.hidden = true; return; }
+    const s = pick(e);
+    if (!s) { tip.hidden = true; renderer.domElement.style.cursor = ''; return; }
+    renderer.domElement.style.cursor = 'pointer';
+    const r = vp.getBoundingClientRect();
+    tip.innerHTML = `<code>${s.tag || s.code}</code> · ${s.product ? esc(s.product) : STATES[s.state].label}`;
+    tip.style.left = (e.clientX - r.left) + 'px'; tip.style.top = (e.clientY - r.top) + 'px';
+    tip.hidden = false;
+  });
+  renderer.domElement.addEventListener('pointerleave', () => { tip.hidden = true; });
+
+  // ---------- Búsqueda ----------
+  const q = document.getElementById('q'), results = document.getElementById('results');
+  function doSearch() {
+    const t = q.value.trim().toLowerCase();
+    if (!t) { results.innerHTML = ''; return; }
+    const m = slots.filter(s => (s.tag && (s.tag.toLowerCase().startsWith(t) || s.tag.toLowerCase().replace(/^[ei]/, '').startsWith(t))) || s.code.toLowerCase().startsWith(t) || (s.sku && s.sku.toLowerCase().includes(t)) || (s.product && s.product.toLowerCase().includes(t))).slice(0, 8);
+    results.innerHTML = m.length
+      ? m.map(s => `<li><button type="button" data-code="${s.code}"><code>${s.tag || s.code}</code><span>${esc(s.product || STATES[s.state].label)}</span></button></li>`).join('')
+      : '<li class="hint">Sin resultados.</li>';
+  }
+  q.addEventListener('input', doSearch);
+  q.addEventListener('keydown', e => { if (e.key === 'Enter') { const b = results.querySelector('button'); if (b) b.click(); } });
+  results.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    select(slots.find(s => s.code === b.dataset.code), true);
+  });
+
+  // ---------- Configuración ----------
+  document.getElementById('cfgForm').addEventListener('submit', e => {
+    e.preventDefault();
+    const clamp = (v, a, b) => Math.max(a, Math.min(b, Math.round(+v) || a));
+    const int0 = (v, a, b) => Math.max(a, Math.min(b, Math.round(+v) || 0));
+    cfg = { first: int0(cFirst.value, 0, 8), blocks: int0(cBlocks.value, 0, 20), perBlock: clamp(cPer.value, 1, 8),
+      mods: clamp(cMods.value, 2, 60), lvls: clamp(cLvls.value, 1, 8),
+      bridges: parseBridges(cBridges.value), bridgeLvls: int0(cBLvls.value, 0, 7),
+      ext: { blocks: int0(cExtBlocks.value, 0, 20), mods: clamp(cExtMods.value, 2, 60) },
+      alt: { from: clamp(cAltFrom.value, 1, 120), lvls: int0(cAltLvls.value, 0, 10) } };
+    if (!cfg.first && !cfg.blocks) cfg.first = 1;
+    cfg.rows = blockSizes().reduce((a, b) => a + b, 0);
+    cBridges.value = fmtBridges(cfg.bridges); cBLvls.value = cfg.bridgeLvls; cAltFrom.value = cfg.alt.from; cAltLvls.value = cfg.alt.lvls;
+    cFirst.value = cfg.first; cBlocks.value = cfg.blocks; cPer.value = cfg.perBlock; cMods.value = cfg.mods; cLvls.value = cfg.lvls; cExtBlocks.value = cfg.ext.blocks; cExtMods.value = cfg.ext.mods;
+    try { localStorage.setItem('racks3d-grande.cfg.v2', JSON.stringify(cfg)); } catch (err) {}
+    build();
+  });
+
+  // ---------- Tema ----------
+  function applyTheme() {
+    const bg = new THREE.Color(cssVar('--scene'));
+    scene.background = bg;
+    scene.fog = new THREE.Fog(bg, 200, 700);
+    const old = Object.assign({}, mats);
+    makeMats();
+    if (!world) return;
+    world.traverse(o => {
+      if (!o.material) return;
+      const key = Object.keys(old).find(k => old[k] === o.material);
+      if (key) o.material = mats[key];
+    });
+    Object.values(old).forEach(m => m.dispose());
+    refreshLabels();
+  }
+  function refreshLabels() {
+    labels.forEach(l => { const n = makeLabel(l.userData.letter, l.userData.door); l.material.map.dispose(); l.material.map = n.material.map; });
+  }
+  makeMats();
+  const bg0 = new THREE.Color(cssVar('--scene')); scene.background = bg0; scene.fog = new THREE.Fog(bg0, 200, 700);
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
+  new MutationObserver(applyTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+  // ---------- Tamaño y bucle ----------
+  function resize() {
+    const w = vp.clientWidth, h = vp.clientHeight;
+    if (!w || !h) return;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h; camera.updateProjectionMatrix();
+  }
+  new ResizeObserver(resize).observe(vp);
+
+  build(); resize();
+  if (document.fonts) document.fonts.ready.then(refreshLabels); // redibuja etiquetas con la fuente cargada
+
+  const ease = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  (function loop(now) {
+    requestAnimationFrame(loop);
+    if (anim) {
+      const k = Math.min(1, (now - anim.start) / anim.ms), e = ease(k);
+      camera.position.lerpVectors(anim.p0, anim.p1, e);
+      controls.target.lerpVectors(anim.t0, anim.t1, e);
+      if (k >= 1) anim = null;
+    }
+    if (selGlow && selGlow.visible) mats.hit.opacity = 0.22 + 0.18 * Math.sin(now / 250);
+    controls.update();
+    renderer.render(scene, camera);
+  })(performance.now());
+})();
+</script>
