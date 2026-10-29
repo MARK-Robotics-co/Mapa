@@ -22,7 +22,8 @@ Los bloques van en orden desde los andenes hacia el fondo.
 | Lugares | 2 tarimas por espacio a lo largo |
 | Niveles | 5 niveles de 1.6 m (8 m de altura útil) |
 | Rack doble, lugares 24 a 80 | 6 niveles de 1.33 m, misma altura total |
-| Capacidad total | 22,154 tarimas, todas vacías |
+| Columnas del techo | 9, quitan 90 tarimas |
+| Capacidad total | 22,064 tarimas, todas vacías |
 
 ### Bloques nuevos
 
@@ -38,6 +39,17 @@ Los puentes quitan los primeros niveles para dejar 4.8 m de paso libre. Están e
 | Bloques nuevos | 33–37 y 60–64 |
 
 En el tramo de 6 niveles del rack doble, el puente quita los primeros 4 niveles para mantener los 4.8 m libres.
+
+### Columnas del techo
+
+Las columnas que sostienen el techo ocupan un lugar completo, de piso a techo, en el rack exterior (E) y en el interior (I) de su cara. Esas posiciones no existen en el mapa y no cuentan en la capacidad.
+
+| Caras | Lugar |
+|---|---|
+| 12, 15, 18, 21, 24, 27 (bloques originales) | 60 |
+| 30, 33, 36 (bloques nuevos) | 66 |
+
+Se cambian en el panel, campo **Columnas del techo**, con el formato `caras: lugar`, separando grupos con punto y coma. Por ejemplo: `12, 15, 18, 21, 24, 27: 60; 30, 33, 36: 66`.
 
 ## Etiquetas
 
@@ -61,7 +73,7 @@ En el buscador del mapa se puede escribir una etiqueta (`E30001`, `I12001`) o so
 
 ## Cambios sin tocar código
 
-En el panel izquierdo, sección **Configurar almacén**, se pueden cambiar los bloques, los espacios, los niveles, los bloques nuevos, los puentes y el tramo de 6 niveles. Luego se pulsa **Regenerar**.
+En el panel izquierdo, sección **Configurar almacén**, se pueden cambiar los bloques, los espacios, los niveles, los bloques nuevos, los puentes, las columnas del techo y el tramo de 6 niveles. Luego se pulsa **Regenerar**.
 
 > Lo que se cambia en el panel se guarda solo en el navegador de esa persona. Para que un cambio sea para todos, hay que cambiarlo en el código y subirlo al repositorio.
 
@@ -69,15 +81,15 @@ En el panel izquierdo, sección **Configurar almacén**, se pueden cambiar los b
 
 | Qué cambiar | Dónde en `index.html` |
 |---|---|
-| Configuración por defecto (bloques, espacios, niveles, puentes, bloques nuevos) | `let cfg = {` (aprox. línea 253) |
-| Medidas en metros: `MOD_W` (frente del espacio), `DEPTH` (fondo), `LVL_H` (altura de nivel), `BACK_GAP` (separación entre racks pegados), `AISLE` (pasillo) | `const MOD_W = …` (aprox. línea 223) |
-| Tamaño de la tarima | `const PAL_W = …` (aprox. línea 224) |
-| Primer número de cara de las etiquetas | `const TAG_FIRST = 10;` (aprox. línea 226) |
-| Pasillos de cabecera, zona de andenes y espacio al frente | `const HEAD = 4, DOCK = 11, FRONT = 3;` (aprox. línea 369) |
-| Número de puertas de andén | `const nDoors = …` (aprox. línea 388) |
+| Configuración por defecto (bloques, espacios, niveles, puentes, bloques nuevos, columnas) | `let cfg = {` (aprox. línea 256) |
+| Medidas en metros: `MOD_W` (frente del espacio), `DEPTH` (fondo), `LVL_H` (altura de nivel), `BACK_GAP` (separación entre racks pegados), `AISLE` (pasillo) | `const MOD_W = …` (aprox. línea 226) |
+| Tamaño de la tarima | `const PAL_W = …` (aprox. línea 227) |
+| Primer número de cara de las etiquetas | `const TAG_FIRST = 10;` (aprox. línea 229) |
+| Pasillos de cabecera, zona de andenes y espacio al frente | `const HEAD = 4, DOCK = 11, FRONT = 3;` (aprox. línea 384) |
+| Número de puertas de andén | `const nDoors = …` (aprox. línea 403) |
 | Colores | Bloque `:root {` al inicio del archivo, con su versión para modo oscuro debajo |
 
-**Importante:** si cambias `let cfg = {` y no ves el cambio, es porque tu navegador recuerda la configuración anterior. Cambia `racks3d-grande.cfg.v2` a `v3` en las dos líneas donde aparece, o abre el mapa en una ventana privada.
+**Importante:** si cambias `let cfg = {` y no ves el cambio, es porque tu navegador recuerda la configuración anterior. Cambia `racks3d-grande.cfg.v4` a `v5` en las dos líneas donde aparece, o abre el mapa en una ventana privada.
 
 ## Pendiente
 

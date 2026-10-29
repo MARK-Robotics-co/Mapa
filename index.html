@@ -1,7 +1,6 @@
 <!doctype html>
 <html lang="es">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<style>body{margin:0}[hidden]{display:none!important}</style>
 <meta charset="utf-8">
 <title>Mapa 3D de Racks Ampliado</title>
 <meta name="claude:viewport-fit-sides" content="cover">
@@ -108,6 +107,7 @@ input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); ou
 .cfg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .cfg.cfg3 { grid-template-columns: 1fr 1fr; margin-top: 8px; }
 .cfg.cfg2 { grid-template-columns: 2fr 1fr; margin-top: 8px; }
+.cfg.cfg1 { grid-template-columns: 1fr; margin-top: 8px; }
 .cfg label { font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
 .btn { font: inherit; font-weight: 600; border-radius: 5px; padding: 8px 12px; cursor: pointer; border: 1px solid var(--line); background: var(--panel); color: var(--fg); }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
@@ -186,6 +186,9 @@ input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); ou
           <label for="cBridges">Puentes (lugares)<input type="text" id="cBridges" value="27-31, 54-58" autocomplete="off"></label>
           <label for="cBLvls">Niveles libres<input type="number" id="cBLvls" min="0" max="7" value="3"></label>
         </div>
+        <div class="cfg cfg1">
+          <label for="cCols">Columnas del techo (caras: lugar; …)<input type="text" id="cCols" value="12, 15, 18, 21, 24, 27: 60; 30, 33, 36: 66" autocomplete="off"></label>
+        </div>
         <div class="cfg cfg3">
           <label for="cAltFrom">1er bloque: desde lugar<input type="number" id="cAltFrom" min="1" max="120" value="24"></label>
           <label for="cAltLvls">Niveles ahí<input type="number" id="cAltLvls" min="0" max="10" value="6"></label>
@@ -250,8 +253,10 @@ input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); ou
 
   // ---------- Configuración guardada ----------
   // Bloques de racks juntos (espalda con espalda); entre bloques hay pasillo
-  let cfg = { first: 2, blocks: 9, perBlock: 4, mods: 40, lvls: 5, bridges: [[27, 31], [54, 58]], bridgeLvls: 3, alt: { from: 24, lvls: 6 }, ext: { blocks: 5, mods: 43 } };
-  try { const s = JSON.parse(localStorage.getItem('racks3d-grande.cfg.v2')); if (s && s.ext && s.alt && s.perBlock && Array.isArray(s.bridges)) cfg = s; } catch (e) {}
+  let cfg = { first: 2, blocks: 9, perBlock: 4, mods: 40, lvls: 5, bridges: [[27, 31], [54, 58]], bridgeLvls: 3, alt: { from: 24, lvls: 6 }, ext: { blocks: 5, mods: 43 },
+    // Columnas del techo: en esas caras ocupan el lugar de piso a techo, en el rack E y en el I
+    cols: [{ faces: [12, 15, 18, 21, 24, 27], lugares: [60] }, { faces: [30, 33, 36], lugares: [66] }] };
+  try { const s = JSON.parse(localStorage.getItem('racks3d-grande.cfg.v4')); if (s && s.ext && s.alt && s.perBlock && Array.isArray(s.bridges) && Array.isArray(s.cols)) cfg = s; } catch (e) {}
   // Bloques en orden desde los andenes: rack doble, bloques originales y bloques nuevos (más largos) al fondo
   const blockList = () => [{ n: cfg.first, mods: cfg.mods }, ...Array(cfg.blocks).fill({ n: cfg.perBlock, mods: cfg.mods }),
     ...Array(cfg.ext.blocks).fill({ n: cfg.perBlock, mods: cfg.ext.mods })].filter(b => b.n > 0);
@@ -262,11 +267,17 @@ input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); ou
   const cExtBlocks = document.getElementById('cExtBlocks'), cExtMods = document.getElementById('cExtMods');
   const cBridges = document.getElementById('cBridges'), cBLvls = document.getElementById('cBLvls');
   const cAltFrom = document.getElementById('cAltFrom'), cAltLvls = document.getElementById('cAltLvls');
+  const cCols = document.getElementById('cCols');
   const fmtBridges = b => b.map(([a, z]) => `${a}-${z}`).join(', ');
   const parseBridges = t => t.split(/[,;]+/).map(s => s.match(/(\d+)\s*(?:-|a)\s*(\d+)/)).filter(Boolean)
     .map(m => [Math.min(+m[1], +m[2]), Math.max(+m[1], +m[2])]);
+  // Columnas: grupos "caras: lugares" separados por punto y coma, p. ej. "12, 15: 60; 30: 74"
+  const fmtCols = c => c.map(g => `${g.faces.join(', ')}: ${g.lugares.join(', ')}`).join('; ');
+  const parseCols = t => t.split(';').map(s => s.split(':')).filter(p => p.length === 2)
+    .map(([f, l]) => ({ faces: (f.match(/\d+/g) || []).map(Number), lugares: (l.match(/\d+/g) || []).map(Number).filter(n => n > 0) }))
+    .filter(g => g.faces.length && g.lugares.length);
   cFirst.value = cfg.first; cBlocks.value = cfg.blocks; cPer.value = cfg.perBlock; cMods.value = cfg.mods; cLvls.value = cfg.lvls; cExtBlocks.value = cfg.ext.blocks; cExtMods.value = cfg.ext.mods;
-  cBridges.value = fmtBridges(cfg.bridges); cBLvls.value = cfg.bridgeLvls; cAltFrom.value = cfg.alt.from; cAltLvls.value = cfg.alt.lvls;
+  cBridges.value = fmtBridges(cfg.bridges); cBLvls.value = cfg.bridgeLvls; cAltFrom.value = cfg.alt.from; cAltLvls.value = cfg.alt.lvls; cCols.value = fmtCols(cfg.cols);
 
   // ---------- Escena ----------
   const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -305,6 +316,7 @@ input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); ou
     mats.door = new THREE.MeshStandardMaterial({ color: c('--door'), roughness: 0.7, metalness: 0.3 });
     mats.zone = new THREE.MeshBasicMaterial({ color: 0xf2c230, transparent: true, opacity: 0.14, depthWrite: false });
     mats.zoneLine = new THREE.LineBasicMaterial({ color: 0xf2c230 });
+    mats.colZone = new THREE.MeshBasicMaterial({ color: c('--column'), transparent: true, opacity: 0.45, depthWrite: false });
     mats.tagPlate = new THREE.MeshBasicMaterial({ color: 0xf6f6f2 });
     Object.keys(STATES).forEach(k => {
       mats[k] = k === 'vacio'
@@ -358,6 +370,9 @@ input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); ou
     let nextFace = TAG_FIRST;
     faceSide.forEach((f, r) => { faceNum[r] = f ? nextFace++ : null; });
     const rowZ = r => zs[r];
+    // Columnas del techo: lugar ocupado en todos los niveles, en el rack E y el I de la cara
+    const colAt = (r, n) => faceNum[tagRef[r]] != null && cfg.cols.some(c => c.faces.includes(faceNum[tagRef[r]]) && c.lugares.includes(n));
+    colLost = 0;
     const maxMods = Math.max(...rowMods);
     const minStart = Math.min(...rowOff), maxEnd = Math.max(...rowOff.map((o, r) => o + rowMods[r]));
     const lenX = (maxEnd - minStart) * MOD_W;
@@ -438,7 +453,7 @@ input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); ou
     const bridgeX = bridges.map(([a, b]) => [ox + (a - 1) * HW, ox + b * HW]);
 
     // Estructura con InstancedMesh
-    const nUp = cfg.rows * (maxMods + 2 + bridges.length * 2) * 2;
+    const nUp = cfg.rows * (maxMods + 2 + bridges.length * 2 + cfg.cols.reduce((a, c) => a + c.lugares.length * 2, 0)) * 2;
     const nBeam = cfg.rows * maxMods * 2 * Math.max(cfg.lvls, cfg.alt.lvls) * 2;
     const ups = new THREE.InstancedMesh(boxGeo, mats.upright, nUp);
     const beams = new THREE.InstancedMesh(boxGeo, mats.beam, Math.max(nBeam, 1));
@@ -463,6 +478,7 @@ input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); ou
       for (let m = 0; m <= rowMods[r]; m++) postX.set((rx0 + m * MOD_W).toFixed(3), rx0 + m * MOD_W);
       bridgeX.forEach(([xa, xb]) => { postX.set(xa.toFixed(3), xa); postX.set(xb.toFixed(3), xb); });
       if (r < cfg.first && cfg.alt.lvls > 0 && cfg.alt.from > 1) { const xt = ox + (cfg.alt.from - 1) * HW; postX.set(xt.toFixed(3), xt); }
+      for (let n = 1; n <= rowMods[r] * 2; n++) if (colAt(r, n)) [n - 1, n].forEach(k => { const xc = rx0 + k * HW; postX.set(xc.toFixed(3), xc); });
       postX.forEach(x => {
         const inside = bridgeX.some(([xa, xb]) => x > xa + 1e-3 && x < xb - 1e-3);
         const pitch = pitchOf(lvlsAt(r, Math.floor((x - rx0) / HW + 1e-6) + 1));
@@ -482,6 +498,7 @@ input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); ou
         for (let p = 0; p < 2; p++) {
           const n = m * 2 + p + 1;
           const xc = rx0 + m * MOD_W + (p ? HW : 0.05) + (HW - 0.05) / 2;
+          if (colAt(r, n)) continue;
           const L = lvlsAt(r, n), pitch = pitchOf(L), skip = inBridge(n + sh) ? firstAbove(pitch) : 0;
           for (let l = 1; l <= L; l++) {
             if (l < skip) continue;
@@ -494,6 +511,7 @@ input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); ou
         for (let p = 0; p < 2; p++) {
           const lugar = m * 2 + p + 1;
           const L = lvlsAt(r, lugar), pitch = pitchOf(L), skip = inBridge(lugar + sh) ? firstAbove(pitch) : 0;
+          if (colAt(r, lugar)) { colLost += L - skip; continue; }
           for (let l = skip; l < L; l++) {
             const code = `${rowLetter(r)}-${pad(m + 1)}-${l + 1}-${p + 1}`;
             const v = R();
@@ -530,6 +548,19 @@ input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); ou
     }
     ups.count = iu; beams.count = ib;
     world.add(ups, beams);
+
+    // Columnas del techo entre el rack E y el I de cada cara indicada, con el piso marcado bajo los dos racks
+    cfg.cols.forEach(c => c.faces.forEach(f => {
+      const rows = [...Array(cfg.rows).keys()].filter(r => faceNum[tagRef[r]] === f);
+      if (!rows.length) return;
+      const zA = oz + Math.min(...rows.map(rowZ)), zB = oz + Math.max(...rows.map(rowZ)) + DEPTH;
+      c.lugares.filter(n => n <= rowMods[rows[0]] * 2).forEach(n => {
+        const x = ox + rowOff[rows[0]] * MOD_W + (n - 0.5) * HW;
+        wall(x, (zA + zB) / 2, 0.6, wallH, 0.6, mats.column).castShadow = true;
+        const zone = new THREE.Mesh(new THREE.PlaneGeometry(HW, zB - zA), mats.colZone);
+        zone.rotation.x = -Math.PI / 2; zone.position.set(x, 0.007, (zA + zB) / 2); world.add(zone);
+      });
+    }));
 
     // Tarimas y huecos: un InstancedMesh por estado (miles de posiciones en pocas llamadas de dibujo)
     Object.keys(STATES).forEach(k => {
@@ -592,7 +623,7 @@ input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); ou
     setView('persp', false);
     renderDetail(null); doSearch();
   }
-  let selMarker, selGlow;
+  let selMarker, selGlow, colLost = 0;
 
   // Círculo azul para filas, cuadro naranja para puertas de andén
   function makeLabel(text, door) {
@@ -635,7 +666,8 @@ input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); ou
     const firstTxt = cfg.first && cfg.alt.lvls ? ` Primer bloque: ${cfg.lvls} niveles hasta el lugar ${cfg.alt.from - 1} y ${cfg.alt.lvls} desde el ${cfg.alt.from}, ${perRow[rowLetter(0)]} tarimas por rack.` : '';
     const midRow = cfg.first + cfg.blocks * cfg.perBlock - 1;
     const restTxt = (cfg.blocks ? ` Bloques originales: ${perRow[rowLetter(midRow)]} tarimas por rack.` : '') + (cfg.ext.blocks ? ` Bloques nuevos: ${cfg.ext.mods} espacios (${cfg.ext.mods * 2} lugares), con los espacios extra antes del lugar 01; puentes en sus lugares ${fmtBridges(cfg.bridges.map(([a, b]) => [a + 2 * Math.max(0, cfg.ext.mods - cfg.mods), b + 2 * Math.max(0, cfg.ext.mods - cfg.mods)]))}; ${perRow[rowLetter(cfg.rows - 1)]} tarimas por rack.` : '');
-    document.getElementById('rackInfo').textContent = `${lay} Racks originales: ${cfg.mods} espacios (${cfg.mods * 2} lugares).${firstTxt}${restTxt}${bTxt}`;
+    const colTxt = cfg.cols.length ? ` Columnas del techo (caras: lugar): ${fmtCols(cfg.cols)}; quitan ${colLost} tarimas.` : '';
+    document.getElementById('rackInfo').textContent = `${lay} Racks originales: ${cfg.mods} espacios (${cfg.mods * 2} lugares).${firstTxt}${restTxt}${bTxt}${colTxt}`;
     document.getElementById('sOcc').textContent = Math.round((total - counts.vacio) / total * 100) + '%';
     document.getElementById('sFree').textContent = counts.vacio.toLocaleString('es');
     document.getElementById('bar').innerHTML = Object.keys(STATES).map(k => `<i style="width:${counts[k] / total * 100}%;background:var(${STATES[k].token})"></i>`).join('');
@@ -768,13 +800,13 @@ input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); ou
     cfg = { first: int0(cFirst.value, 0, 8), blocks: int0(cBlocks.value, 0, 20), perBlock: clamp(cPer.value, 1, 8),
       mods: clamp(cMods.value, 2, 60), lvls: clamp(cLvls.value, 1, 8),
       bridges: parseBridges(cBridges.value), bridgeLvls: int0(cBLvls.value, 0, 7),
-      ext: { blocks: int0(cExtBlocks.value, 0, 20), mods: clamp(cExtMods.value, 2, 60) },
+      ext: { blocks: int0(cExtBlocks.value, 0, 20), mods: clamp(cExtMods.value, 2, 60) }, cols: parseCols(cCols.value),
       alt: { from: clamp(cAltFrom.value, 1, 120), lvls: int0(cAltLvls.value, 0, 10) } };
     if (!cfg.first && !cfg.blocks) cfg.first = 1;
     cfg.rows = blockSizes().reduce((a, b) => a + b, 0);
-    cBridges.value = fmtBridges(cfg.bridges); cBLvls.value = cfg.bridgeLvls; cAltFrom.value = cfg.alt.from; cAltLvls.value = cfg.alt.lvls;
+    cBridges.value = fmtBridges(cfg.bridges); cBLvls.value = cfg.bridgeLvls; cAltFrom.value = cfg.alt.from; cAltLvls.value = cfg.alt.lvls; cCols.value = fmtCols(cfg.cols);
     cFirst.value = cfg.first; cBlocks.value = cfg.blocks; cPer.value = cfg.perBlock; cMods.value = cfg.mods; cLvls.value = cfg.lvls; cExtBlocks.value = cfg.ext.blocks; cExtMods.value = cfg.ext.mods;
-    try { localStorage.setItem('racks3d-grande.cfg.v2', JSON.stringify(cfg)); } catch (err) {}
+    try { localStorage.setItem('racks3d-grande.cfg.v4', JSON.stringify(cfg)); } catch (err) {}
     build();
   });
 
