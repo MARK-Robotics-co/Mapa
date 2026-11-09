@@ -255,8 +255,11 @@ input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); ou
   // Bloques de racks juntos (espalda con espalda); entre bloques hay pasillo
   let cfg = { first: 2, blocks: 9, perBlock: 4, mods: 40, lvls: 5, bridges: [[27, 31], [54, 58]], bridgeLvls: 3, alt: { from: 24, lvls: 6 }, ext: { blocks: 5, mods: 43 },
     // Columnas del techo: en esas caras ocupan el lugar de piso a techo, en el rack E y en el I
-    cols: [{ faces: [12, 15, 18, 21, 24, 27], lugares: [60] }, { faces: [30, 33, 36], lugares: [66] }] };
-  try { const s = JSON.parse(localStorage.getItem('racks3d-grande.cfg.v4')); if (s && s.ext && s.alt && s.perBlock && Array.isArray(s.bridges) && Array.isArray(s.cols)) cfg = s; } catch (e) {}
+    cols: [{ faces: [12, 15, 18, 21, 24, 27], lugares: [60] }, { faces: [30, 33, 36], lugares: [66] }],
+    // Niveles por cara, en el rack E y en el I: [desde lugar, hasta lugar, niveles, (solo estos niveles)].
+    // En esas caras sustituyen a los puentes; los tramos de 6 niveles tienen la misma altura total
+    profiles: { 39: [[1, 16, 5], [17, 22, 6], [23, 25, 5], [26, 41, 6], [42, 44, 5, [3, 4, 5]], [45, 58, 5], [59, 68, 5], [69, 71, 5, [2, 3, 4]], [72, 86, 6]] } };
+  try { const s = JSON.parse(localStorage.getItem('racks3d-grande.cfg.v5')); if (s && s.ext && s.alt && s.perBlock && Array.isArray(s.bridges) && Array.isArray(s.cols) && s.profiles) cfg = s; } catch (e) {}
   // Bloques en orden desde los andenes: rack doble, bloques originales y bloques nuevos (más largos) al fondo
   const blockList = () => [{ n: cfg.first, mods: cfg.mods }, ...Array(cfg.blocks).fill({ n: cfg.perBlock, mods: cfg.mods }),
     ...Array(cfg.ext.blocks).fill({ n: cfg.perBlock, mods: cfg.ext.mods })].filter(b => b.n > 0);
@@ -453,8 +456,9 @@ input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); ou
     const bridgeX = bridges.map(([a, b]) => [ox + (a - 1) * HW, ox + b * HW]);
 
     // Estructura con InstancedMesh
-    const nUp = cfg.rows * (maxMods + 2 + bridges.length * 2 + cfg.cols.reduce((a, c) => a + c.lugares.length * 2, 0)) * 2;
-    const nBeam = cfg.rows * maxMods * 2 * Math.max(cfg.lvls, cfg.alt.lvls) * 2;
+    const profSegs = Object.values(cfg.profiles).flat();
+    const nUp = cfg.rows * (maxMods + 2 + bridges.length * 2 + cfg.cols.reduce((a, c) => a + c.lugares.length * 2, 0) + profSegs.length * 2) * 2;
+    const nBeam = cfg.rows * maxMods * 2 * Math.max(cfg.lvls, cfg.alt.lvls, ...profSegs.map(s => s[2])) * 2;
     const ups = new THREE.InstancedMesh(boxGeo, mats.upright, nUp);
     const beams = new THREE.InstancedMesh(boxGeo, mats.beam, Math.max(nBeam, 1));
     ups.castShadow = beams.castShadow = true;
@@ -468,26 +472,42 @@ input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); ou
     const pitchOf = L => cfg.lvls * LVL_H / L;
     // Primer nivel que queda arriba del paso libre del puente
     const firstAbove = pitch => Math.ceil(bTop / pitch - 1e-6);
+    // Niveles de un lugar: cuántos hay (L) y cuáles existen (índice 0 = nivel 1), según el perfil de la cara o los puentes
+    const profOf = r => cfg.profiles[faceNum[tagRef[r]]];
+    const lvlInfo = (r, n) => {
+      const s = profOf(r) && profOf(r).find(([a, b]) => n >= a && n <= b);
+      if (s) return { L: s[2], has: l => !s[3] || s[3].includes(l + 1) };
+      const L = lvlsAt(r, n), skip = inBridge(n + rowOff[r] * 2) ? firstAbove(pitchOf(L)) : 0;
+      return { L, has: l => l >= skip };
+    };
 
     for (let r = 0; r < cfg.rows; r++) {
       const z0 = oz + rowZ(r);
       // Inicio de este rack y desfase de lugares respecto a los originales (los puentes quedan alineados)
-      const rx0 = ox + rowOff[r] * MOD_W, sh = rowOff[r] * 2;
-      // Postes en cada módulo, en las orillas de cada puente y donde cambia el número de niveles
+      const rx0 = ox + rowOff[r] * MOD_W, prof = profOf(r);
+      // Postes en cada módulo, en las orillas de cada puente o tramo y donde cambia el número de niveles
       const postX = new Map();
-      for (let m = 0; m <= rowMods[r]; m++) postX.set((rx0 + m * MOD_W).toFixed(3), rx0 + m * MOD_W);
-      bridgeX.forEach(([xa, xb]) => { postX.set(xa.toFixed(3), xa); postX.set(xb.toFixed(3), xb); });
-      if (r < cfg.first && cfg.alt.lvls > 0 && cfg.alt.from > 1) { const xt = ox + (cfg.alt.from - 1) * HW; postX.set(xt.toFixed(3), xt); }
-      for (let n = 1; n <= rowMods[r] * 2; n++) if (colAt(r, n)) [n - 1, n].forEach(k => { const xc = rx0 + k * HW; postX.set(xc.toFixed(3), xc); });
+      const addPost = x => postX.set(x.toFixed(3), x);
+      for (let m = 0; m <= rowMods[r]; m++) addPost(rx0 + m * MOD_W);
+      if (prof) prof.forEach(([a, b]) => { addPost(rx0 + (a - 1) * HW); addPost(rx0 + Math.min(b, rowMods[r] * 2) * HW); });
+      else bridgeX.forEach(([xa, xb]) => { addPost(xa); addPost(xb); });
+      if (r < cfg.first && cfg.alt.lvls > 0 && cfg.alt.from > 1) addPost(ox + (cfg.alt.from - 1) * HW);
+      for (let n = 1; n <= rowMods[r] * 2; n++) if (colAt(r, n)) [n - 1, n].forEach(k => addPost(rx0 + k * HW));
+      // Altura donde empieza el poste: el primer nivel que existe en los lugares de ambos lados
+      const lowY = n => {
+        if (n < 1 || n > rowMods[r] * 2 || colAt(r, n)) return Infinity;
+        const { L, has } = lvlInfo(r, n);
+        let f = 0; while (f < L && !has(f)) f++;
+        return f ? f * pitchOf(L) - 0.12 : 0;
+      };
       postX.forEach(x => {
-        const inside = bridgeX.some(([xa, xb]) => x > xa + 1e-3 && x < xb - 1e-3);
-        const pitch = pitchOf(lvlsAt(r, Math.floor((x - rx0) / HW + 1e-6) + 1));
-        const y0 = inside ? firstAbove(pitch) * pitch - 0.12 : 0, h = topY - y0;
+        const k = Math.round((x - rx0) / HW);
+        const y = Math.min(lowY(k), lowY(k + 1)), y0 = isFinite(y) ? y : 0, h = topY - y0;
         put(ups, iu++, x, y0 + h / 2, z0 + 0.04, 0.09, h, 0.08);
         put(ups, iu++, x, y0 + h / 2, z0 + DEPTH - 0.04, 0.09, h, 0.08);
       });
       // Piso marcado bajo cada puente
-      bridgeX.forEach(([xa, xb]) => {
+      if (!prof) bridgeX.forEach(([xa, xb]) => {
         const zone = new THREE.Mesh(new THREE.PlaneGeometry(xb - xa, DEPTH), mats.zone);
         zone.rotation.x = -Math.PI / 2; zone.position.set((xa + xb) / 2, 0.006, z0 + DEPTH / 2); world.add(zone);
         const edge = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneGeometry(xb - xa, DEPTH)), mats.zoneLine);
@@ -499,9 +519,10 @@ input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); ou
           const n = m * 2 + p + 1;
           const xc = rx0 + m * MOD_W + (p ? HW : 0.05) + (HW - 0.05) / 2;
           if (colAt(r, n)) continue;
-          const L = lvlsAt(r, n), pitch = pitchOf(L), skip = inBridge(n + sh) ? firstAbove(pitch) : 0;
+          const { L, has } = lvlInfo(r, n), pitch = pitchOf(L);
           for (let l = 1; l <= L; l++) {
-            if (l < skip) continue;
+            // Larguero bajo cada nivel que existe, más el de remate arriba
+            if (l < L && !has(l)) continue;
             const y = l === L ? topY - 0.06 : l * pitch - 0.06;
             put(beams, ib++, xc, y, z0 + 0.05, HW - 0.05, 0.12, 0.05);
             put(beams, ib++, xc, y, z0 + DEPTH - 0.05, HW - 0.05, 0.12, 0.05);
@@ -510,9 +531,10 @@ input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); ou
         // Tarimas / huecos
         for (let p = 0; p < 2; p++) {
           const lugar = m * 2 + p + 1;
-          const L = lvlsAt(r, lugar), pitch = pitchOf(L), skip = inBridge(lugar + sh) ? firstAbove(pitch) : 0;
-          if (colAt(r, lugar)) { colLost += L - skip; continue; }
-          for (let l = skip; l < L; l++) {
+          const { L, has } = lvlInfo(r, lugar), pitch = pitchOf(L);
+          if (colAt(r, lugar)) { for (let l = 0; l < L; l++) colLost += has(l) ? 1 : 0; continue; }
+          for (let l = 0; l < L; l++) {
+            if (!has(l)) continue;
             const code = `${rowLetter(r)}-${pad(m + 1)}-${l + 1}-${p + 1}`;
             const v = R();
             const st = 'vacio'; // racks vacíos: todas las posiciones libres
@@ -665,9 +687,11 @@ input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); ou
     const perRow = {}; slots.forEach(s => { perRow[s.row] = (perRow[s.row] || 0) + 1; });
     const firstTxt = cfg.first && cfg.alt.lvls ? ` Primer bloque: ${cfg.lvls} niveles hasta el lugar ${cfg.alt.from - 1} y ${cfg.alt.lvls} desde el ${cfg.alt.from}, ${perRow[rowLetter(0)]} tarimas por rack.` : '';
     const midRow = cfg.first + cfg.blocks * cfg.perBlock - 1;
-    const restTxt = (cfg.blocks ? ` Bloques originales: ${perRow[rowLetter(midRow)]} tarimas por rack.` : '') + (cfg.ext.blocks ? ` Bloques nuevos: ${cfg.ext.mods} espacios (${cfg.ext.mods * 2} lugares), con los espacios extra antes del lugar 01; puentes en sus lugares ${fmtBridges(cfg.bridges.map(([a, b]) => [a + 2 * Math.max(0, cfg.ext.mods - cfg.mods), b + 2 * Math.max(0, cfg.ext.mods - cfg.mods)]))}; ${perRow[rowLetter(cfg.rows - 1)]} tarimas por rack.` : '');
+    const restTxt = (cfg.blocks ? ` Bloques originales: ${perRow[rowLetter(midRow)]} tarimas por rack.` : '') + (cfg.ext.blocks ? ` Bloques nuevos: ${cfg.ext.mods} espacios (${cfg.ext.mods * 2} lugares), con los espacios extra antes del lugar 01; puentes en sus lugares ${fmtBridges(cfg.bridges.map(([a, b]) => [a + 2 * Math.max(0, cfg.ext.mods - cfg.mods), b + 2 * Math.max(0, cfg.ext.mods - cfg.mods)]))}; ${perRow[rowLetter(cfg.rows - cfg.perBlock)]} tarimas por rack.` : '');
+    // Caras con niveles propios: cuántas tarimas quedan en cada rack (E o I) de esa cara
+    const profTxt = Object.keys(cfg.profiles).map(f => { const t = slots.find(x => x.rackNum === +f && x.tag[0] === 'E'); return t ? ` Cara ${f}: niveles propios por tramo, sin puentes, ${perRow[t.row]} tarimas por rack.` : ''; }).join('');
     const colTxt = cfg.cols.length ? ` Columnas del techo (caras: lugar): ${fmtCols(cfg.cols)}; quitan ${colLost} tarimas.` : '';
-    document.getElementById('rackInfo').textContent = `${lay} Racks originales: ${cfg.mods} espacios (${cfg.mods * 2} lugares).${firstTxt}${restTxt}${bTxt}${colTxt}`;
+    document.getElementById('rackInfo').textContent = `${lay} Racks originales: ${cfg.mods} espacios (${cfg.mods * 2} lugares).${firstTxt}${restTxt}${bTxt}${colTxt}${profTxt}`;
     document.getElementById('sOcc').textContent = Math.round((total - counts.vacio) / total * 100) + '%';
     document.getElementById('sFree').textContent = counts.vacio.toLocaleString('es');
     document.getElementById('bar').innerHTML = Object.keys(STATES).map(k => `<i style="width:${counts[k] / total * 100}%;background:var(${STATES[k].token})"></i>`).join('');
@@ -801,12 +825,12 @@ input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); ou
       mods: clamp(cMods.value, 2, 60), lvls: clamp(cLvls.value, 1, 8),
       bridges: parseBridges(cBridges.value), bridgeLvls: int0(cBLvls.value, 0, 7),
       ext: { blocks: int0(cExtBlocks.value, 0, 20), mods: clamp(cExtMods.value, 2, 60) }, cols: parseCols(cCols.value),
-      alt: { from: clamp(cAltFrom.value, 1, 120), lvls: int0(cAltLvls.value, 0, 10) } };
+      alt: { from: clamp(cAltFrom.value, 1, 120), lvls: int0(cAltLvls.value, 0, 10) }, profiles: cfg.profiles };
     if (!cfg.first && !cfg.blocks) cfg.first = 1;
     cfg.rows = blockSizes().reduce((a, b) => a + b, 0);
     cBridges.value = fmtBridges(cfg.bridges); cBLvls.value = cfg.bridgeLvls; cAltFrom.value = cfg.alt.from; cAltLvls.value = cfg.alt.lvls; cCols.value = fmtCols(cfg.cols);
     cFirst.value = cfg.first; cBlocks.value = cfg.blocks; cPer.value = cfg.perBlock; cMods.value = cfg.mods; cLvls.value = cfg.lvls; cExtBlocks.value = cfg.ext.blocks; cExtMods.value = cfg.ext.mods;
-    try { localStorage.setItem('racks3d-grande.cfg.v4', JSON.stringify(cfg)); } catch (err) {}
+    try { localStorage.setItem('racks3d-grande.cfg.v5', JSON.stringify(cfg)); } catch (err) {}
     build();
   });
 

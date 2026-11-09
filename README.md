@@ -23,7 +23,8 @@ Los bloques van en orden desde los andenes hacia el fondo.
 | Niveles | 5 niveles de 1.6 m (8 m de altura útil) |
 | Rack doble, lugares 24 a 80 | 6 niveles de 1.33 m, misma altura total |
 | Columnas del techo | 9, quitan 90 tarimas |
-| Capacidad total | 22,064 tarimas, todas vacías |
+| Cara 39 | Niveles propios por tramo, sin puentes (ver abajo) |
+| Capacidad total | 22,174 tarimas, todas vacías |
 
 ### Bloques nuevos
 
@@ -50,6 +51,24 @@ Las columnas que sostienen el techo ocupan un lugar completo, de piso a techo, e
 | 30, 33, 36 (bloques nuevos) | 66 |
 
 Se cambian en el panel, campo **Columnas del techo**, con el formato `caras: lugar`, separando grupos con punto y coma. Por ejemplo: `12, 15, 18, 21, 24, 27: 60; 30, 33, 36: 66`.
+
+### Cara 39
+
+La cara 39 (el último pasillo, rack E y rack I) tiene sus propios niveles por tramo y no lleva los puentes de los demás bloques. Los tramos de 6 niveles son más bajos, con la misma altura total de 8 m.
+
+| Lugares | Niveles |
+|---|---|
+| 1–16 | 5 |
+| 17–22 | 6 |
+| 23–25 | 5 |
+| 26–41 | 6 |
+| 42–44 | Solo 3, 4 y 5 |
+| 45–58 | 5 |
+| 59–68 | 5 |
+| 69–71 | Solo 2, 3 y 4 |
+| 72–86 | 6 |
+
+Cada rack de la cara 39 tiene 455 tarimas. Los tramos se cambian en el código, en `profiles` dentro de `let cfg = {`. Cada tramo es `[desde, hasta, niveles]`, y si solo existen algunos niveles se agrega la lista, por ejemplo `[42, 44, 5, [3, 4, 5]]`.
 
 ## Etiquetas
 
@@ -81,15 +100,15 @@ En el panel izquierdo, sección **Configurar almacén**, se pueden cambiar los b
 
 | Qué cambiar | Dónde en `index.html` |
 |---|---|
-| Configuración por defecto (bloques, espacios, niveles, puentes, bloques nuevos, columnas) | `let cfg = {` (aprox. línea 256) |
+| Configuración por defecto (bloques, espacios, niveles, puentes, bloques nuevos, columnas, niveles de la cara 39) | `let cfg = {` (aprox. línea 256) |
 | Medidas en metros: `MOD_W` (frente del espacio), `DEPTH` (fondo), `LVL_H` (altura de nivel), `BACK_GAP` (separación entre racks pegados), `AISLE` (pasillo) | `const MOD_W = …` (aprox. línea 226) |
 | Tamaño de la tarima | `const PAL_W = …` (aprox. línea 227) |
 | Primer número de cara de las etiquetas | `const TAG_FIRST = 10;` (aprox. línea 229) |
-| Pasillos de cabecera, zona de andenes y espacio al frente | `const HEAD = 4, DOCK = 11, FRONT = 3;` (aprox. línea 384) |
-| Número de puertas de andén | `const nDoors = …` (aprox. línea 403) |
+| Pasillos de cabecera, zona de andenes y espacio al frente | `const HEAD = 4, DOCK = 11, FRONT = 3;` (aprox. línea 387) |
+| Número de puertas de andén | `const nDoors = …` (aprox. línea 406) |
 | Colores | Bloque `:root {` al inicio del archivo, con su versión para modo oscuro debajo |
 
-**Importante:** si cambias `let cfg = {` y no ves el cambio, es porque tu navegador recuerda la configuración anterior. Cambia `racks3d-grande.cfg.v4` a `v5` en las dos líneas donde aparece, o abre el mapa en una ventana privada.
+**Importante:** si cambias `let cfg = {` y no ves el cambio, es porque tu navegador recuerda la configuración anterior. Cambia `racks3d-grande.cfg.v5` a `v6` en las dos líneas donde aparece, o abre el mapa en una ventana privada.
 
 ## Pendiente
 
